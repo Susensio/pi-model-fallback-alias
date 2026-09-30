@@ -10,7 +10,7 @@ import { createDebugLog, type DebugLog } from "./src/debug-log.ts";
 import { describeFailure, type AliasConfig, type CooldownRegistry } from "./src/fallback/index.ts";
 import { EXTENSION_LATENCY_LOG_PATH, expandLogPaths, readLatencyLog } from "./src/latency/log.ts";
 import { createLatencyReport, createLatencyReportEntry } from "./src/latency/report.ts";
-import { aliasRegistrySlot, type AliasRegistrySlot } from "./src/registry-slot.ts";
+import { aliasSessionSlot, type AliasSessionSlot } from "./src/session-slot.ts";
 import { renderStatusTick, startSession, type AliasSession as StatusSession } from "./src/status/session-status.ts";
 import {
 	appendAliasTargetsEntry,
@@ -44,7 +44,7 @@ export interface PiModelAliasDependencies {
 	cooldowns?: CooldownRegistry;
 	timers?: import("./src/fallback/types.ts").TimerApi;
 	/** Defaults to the slot shared by every copy of the extension in this process. */
-	registrySlot?: AliasRegistrySlot;
+	sessionSlot?: AliasSessionSlot;
 }
 
 export default function piModelAlias(pi: ExtensionAPI): void {
@@ -61,17 +61,22 @@ export function installPiModelAlias(pi: ExtensionAPI, dependencies: PiModelAlias
 	debugLog.log("extension-load", { mapPath: MAP_PATH, aliases: [...aliases.keys()] });
 	if (aliases.size === 0) return;
 
-	const registrySlot = dependencies.registrySlot ?? aliasRegistrySlot();
+	const sessionSlot = dependencies.sessionSlot ?? aliasSessionSlot();
 	const session: AliasSession = {
-		// The registry belongs to the process, not to this copy: see AliasRegistrySlot.
+		// Bound session state belongs to the process, not to this copy: see AliasSessionSlot.
 		get registry() {
-			return registrySlot.current;
+			return sessionSlot.registry;
 		},
 		set registry(value) {
-			registrySlot.current = value;
+			sessionSlot.registry = value;
 		},
 		ui: undefined,
-		hasUI: false,
+		get hasUI() {
+			return sessionSlot.hasUI;
+		},
+		set hasUI(value) {
+			sessionSlot.hasUI = value;
+		},
 		model: undefined,
 		activeTargets: new Map(),
 	};
