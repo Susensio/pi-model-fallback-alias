@@ -296,3 +296,57 @@ test("a copy warns about failover when no copy has a UI", async (t) => {
 		JSON.stringify(warnings),
 	);
 });
+
+function trackedRegistry(name: string, calls: string[]) {
+	const registry = streamingRegistry();
+	return {
+		...registry,
+		getProvider() {
+			calls.push(name);
+			return registry.getProvider();
+		},
+	};
+}
+
+test("a later headless bound copy does not replace an interactive copy's registry", async () => {
+	const calls: string[] = [];
+	const slot = { registry: undefined, hasUI: false };
+	const interactiveRegistry = trackedRegistry("interactive", calls);
+	const headlessRegistry = trackedRegistry("headless", calls);
+	const install = () => {
+		const copy = harness();
+		installPiModelAlias(copy.pi as never, {
+			aliasConfig: parseAliasConfig({ coder: "provider/target" }),
+			debugLog: { log() {} },
+			cooldowns: cooldowns(),
+			sessionSlot: slot,
+		});
+		return copy;
+	};
+
+	const interactive = install();
+	await interactive.listeners.get("session_start")?.({} as never, {
+		model: { id: "coder", provider: "alias" },
+		modelRegistry: interactiveRegistry,
+		hasUI: true,
+		ui: uiStub(),
+	} as never);
+
+	// An in-process headless child binds its own copy after the interactive one.
+	const headless = install();
+	await headless.listeners.get("session_start")?.({} as never, {
+		model: { id: "coder", provider: "alias" },
+		modelRegistry: headlessRegistry,
+		hasUI: false,
+	} as never);
+
+	const unbound = install();
+	calls.length = 0;
+
+	await collectProvider(interactive, "coder");
+	await collectProvider(headless, "coder");
+	await collectProvider(unbound, "coder");
+
+	assert.deepEqual(calls, ["interactive", "headless", "interactive"]);
+	assert.strictEqual(slot.registry, interactiveRegistry);
+});

@@ -3,22 +3,26 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 export type AliasRegistry = ExtensionContext["modelRegistry"];
 
 /**
- * The bound session state every copy of this extension shares in one process.
+ * The fallback session state every copy of this extension shares in one process.
  *
  * Pi runs more than one copy of this extension in a single process: a subagent
  * session binds extensions again, and a copy whose agent restricts
  * `extensions:` is loaded but never bound, so it never receives `session_start`.
  * Every copy re-registers the process-wide `alias` provider, so the streams
- * serving the process belong to whichever copy loaded last — and that copy has
- * neither a registry nor a UI of its own.
+ * serving the process may belong to a copy that has neither a registry nor a
+ * UI of its own.
  *
- * Sharing one slot keeps those streams usable instead of failing every alias
- * call, and tells the serving copy that a UI exists, so it keeps failover
- * warnings off stderr, where a live TUI would draw over them.
+ * A bound copy always streams through its own registry. The slot only serves
+ * copies that were never bound, so they stay usable instead of failing every
+ * alias call. It holds the registry of the interactive session when there is
+ * one: a headless session never replaces it.
  */
 export interface AliasSessionSlot {
 	registry: AliasRegistry | undefined;
-	/** True once any copy in this process received a UI session. */
+	/**
+	 * True once any copy in this process received a UI session. Every copy then
+	 * keeps warnings off stderr, where a live TUI would draw over them.
+	 */
 	hasUI: boolean;
 }
 

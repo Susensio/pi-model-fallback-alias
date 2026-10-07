@@ -62,20 +62,26 @@ export function installPiModelAlias(pi: ExtensionAPI, dependencies: PiModelAlias
 	if (aliases.size === 0) return;
 
 	const sessionSlot = dependencies.sessionSlot ?? aliasSessionSlot();
+	// A bound copy keeps its own registry; only a copy that never receives
+	// session_start falls back to the process-wide slot (see AliasSessionSlot).
+	let bound = false;
+	let ownRegistry: Registry | undefined;
+	let ownHasUI = false;
 	const session: AliasSession = {
-		// Bound session state belongs to the process, not to this copy: see AliasSessionSlot.
 		get registry() {
-			return sessionSlot.registry;
+			return bound ? ownRegistry : sessionSlot.registry;
 		},
 		set registry(value) {
-			sessionSlot.registry = value;
+			bound = true;
+			ownRegistry = value;
 		},
 		ui: undefined,
+		// stderr is shared by the whole process, so any bound UI keeps warnings off it.
 		get hasUI() {
-			return sessionSlot.hasUI;
+			return ownHasUI || sessionSlot.hasUI;
 		},
 		set hasUI(value) {
-			sessionSlot.hasUI = value;
+			ownHasUI = value;
 		},
 		model: undefined,
 		activeTargets: new Map(),
@@ -148,6 +154,10 @@ export function installPiModelAlias(pi: ExtensionAPI, dependencies: PiModelAlias
 
 	pi.on("session_start", (_event, ctx) => {
 		session.model = ctx.model;
+		// Publish for unbound copies. A headless session must not replace the
+		// registry of an interactive session that is already bound.
+		if (ctx.hasUI || !sessionSlot.hasUI) sessionSlot.registry = ctx.modelRegistry;
+		if (ctx.hasUI) sessionSlot.hasUI = true;
 		if (startSession(session, ctx, debugLog)) {
 			lastPushedText = undefined;
 			startStatusRefresh();
